@@ -137,3 +137,4 @@ results
 
 # Whitelist
 !sample/ImageMatch/lib
+*.png

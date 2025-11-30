@@ -4,7 +4,7 @@ sys.path.append('./sample')
 from PIL import Image
 import numpy as np
 from io import BytesIO
-import win32clipboard
+import torch
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import Qt, QRect, QPoint, QSize
@@ -18,7 +18,6 @@ import cv2
 import qimage2ndarray
 
 from utils_func import *
-from sample_func import *
 from colorizer import Colorizer
 from thread import SampleThread, LoadThread
 from colorpicker.colorpicker import ColorPicker
@@ -30,20 +29,23 @@ class MainWindow(QMainWindow, Ui_main.Ui_MainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         self.current_path = os.path.dirname(os.path.abspath(__file__))
-        self.model_path = os.path.join(self.current_path, os.pardir, 'finals')
-        self.device = 'cuda:0'
+        self.model_path = os.path.join(self.current_path, os.pardir, 'framework', 'checkpoints')
+        self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.drag_flag = False
         self.save_path = os.path.abspath('./demo/data')
         self.img_size = [256, 256]
         self.colorizer = None
-        self.default_img_path = 'C:\\Users\\lucky\\Desktop\\old_photo\\images2'
-        self.default_exp_path = 'C:\\MyFiles\\Dataset\\coco\\val2017'
+        self.default_img_path = os.path.join(self.current_path, os.pardir, 'sample', 'images')
+        self.default_exp_path = os.path.join(self.current_path, os.pardir, 'sample', 'images')
         self.setupUi(self)
         self.init_components()
-        # Coco model
-        self.load_filltran('C:/MyFiles/CondTran/finals/bert_coco/logs/bert/epoch=144-step=259999.ckpt')
-        # Imagenet model
-        #self.load_filltran('C:/MyFiles/CondTran/finals/bert_final/logs/bert/epoch=14-step=142124.ckpt')
+        # Coco model - update this path to your actual checkpoint location
+        checkpoint_path = os.path.join(self.current_path, os.pardir, 'framework', 'checkpoints', 'unicolor_mscoco', 'mscoco_step259999.ckpt')
+        if os.path.exists(checkpoint_path):
+            self.load_filltran(checkpoint_path)
+        else:
+            print(f"Warning: Checkpoint not found at {checkpoint_path}")
+            print("Please load the model manually using File > Load Model")
 
     def mousePressEvent(self, e):
         self.origin = QPoint(e.pos())
@@ -171,14 +173,25 @@ class MainWindow(QMainWindow, Ui_main.Ui_MainWindow):
             self.send_result(self.output_image)
 
     def copy_output(self):
-        output = BytesIO()
-        self.output_image.convert('RGB').save(output, 'BMP')
-        data = output.getvalue()[14:]
-        output.close()
-        win32clipboard.OpenClipboard()
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
-        win32clipboard.CloseClipboard()
+        # Linux-compatible clipboard copy - save to temp file
+        # Note: On Linux, you can use xclip or direct Qt clipboard
+        try:
+            from PyQt5.QtGui import QGuiApplication
+            clipboard = QGuiApplication.clipboard()
+            # Convert PIL Image to QPixmap
+            img_array = np.array(self.output_image.convert('RGB'))
+            height, width, channel = img_array.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(q_image)
+            clipboard.setPixmap(pixmap)
+            print("Image copied to clipboard")
+        except Exception as e:
+            # Fallback: save to file
+            temp_path = '/tmp/unicolor_output.png'
+            self.output_image.save(temp_path)
+            print(f"Clipboard copy failed. Image saved to {temp_path}")
+            print(f"Error: {e}")
         
     def display_input(self, image):
         if hasattr(self, 'input_painter'):
